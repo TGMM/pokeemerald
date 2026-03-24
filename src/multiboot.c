@@ -1,7 +1,9 @@
 #include "global.h"
 #include "gba/gba.h"
+#include "gba/io_reg.h"
 #include "multiboot.h"
 
+#ifndef PORTABLE
 static u16 MultiBoot_required_data[MULTIBOOT_NCHILD];
 
 static int MultiBootSend(struct MultiBootParam *mp, u16 data);
@@ -469,3 +471,4 @@ static void MultiBootWaitSendDone(void)
 
     MultiBootWaitCycles(600);
 }
+#endif

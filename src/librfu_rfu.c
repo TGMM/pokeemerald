@@ -133,6 +133,7 @@ static const char str_checkMbootLL[] = "RFU-MBOOT";
 
 u16 rfu_initializeAPI(u32 *APIBuffer, u16 buffByteSize, IntrFunc *sioIntrTable_p, bool8 copyInterruptToRam)
 {
+#ifndef PORTABLE
     u16 i;
     u16 buffByteSizeMax;
 
@@ -196,6 +197,7 @@ u16 rfu_initializeAPI(u32 *APIBuffer, u16 buffByteSize, IntrFunc *sioIntrTable_p
         );
 #endif
     gRfuFixed->fastCopyPtr = (void *)gRfuFixed->fastCopyBuffer + 1;
+#endif
     return 0;
 }
 
@@ -337,6 +339,7 @@ u16 rfu_getRFUStatus(u8 *rfuState)
  */
 u16 rfu_MBOOT_CHILD_inheritanceLinkStatus(void)
 {
+#ifndef PORTABLE
     const char *s1 = str_checkMbootLL;
     char *s2 = (char *)(IWRAM_START + 0xF0);
     u16 checksum;
@@ -357,6 +360,7 @@ u16 rfu_MBOOT_CHILD_inheritanceLinkStatus(void)
         return 1;
     CpuCopy16((u16 *)IWRAM_START, gRfuLinkStatus, sizeof(struct RfuLinkStatus));
     gRfuStatic->flags |= 0x80; // mboot
+#endif
     return 0;
 }
 
@@ -437,9 +441,13 @@ void rfu_REQ_configSystem(u16 availSlotFlag, u8 maxMFrame, u8 mcTimer)
     {
         u16 IMEBackup = REG_IME;
 
+#ifndef PORTABLE
         REG_IME = 0;
         gRfuStatic->linkEmergencyLimit = Div(600, mcTimer);
         REG_IME = IMEBackup;
+#else
+        gRfuStatic->linkEmergencyLimit = 600 / mcTimer;
+#endif
     }
 }
 
