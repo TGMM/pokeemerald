@@ -3,6 +3,14 @@
 
 #include <string.h>
 #include <limits.h>
+#ifdef PORTABLE
+#include <stdio.h>
+#ifndef NO_STD_LIB_ENABLED
+#define DBGPRINTF(...) printf(__VA_ARGS__)
+#else
+#define DBGPRINTF(...)
+#endif
+#endif
 #include "config.h" // we need to define config before gba headers as print stuff needs the functions nulled before defines.
 #include "gba/gba.h"
 #include "gametypes.h"
@@ -88,6 +96,14 @@
 #define SAFE_DIV(a, b) (((b) != 0) ? (a) / (b) : 0)
 #else
 #define SAFE_DIV(a, b) ((a) / (b))
+#endif
+
+// Used in cases where modulo by 0 can occur in the retail version.
+// Avoids invalid opcodes on some emulators, and the otherwise UB.
+#ifdef UBFIX
+#define SAFE_MOD(a, b) ((b) ? (a) % (b) : 0)
+#else
+#define SAFE_MOD(a, b) ((a) % (b))
 #endif
 
 // The below macro does a%n, but (to match) will switch to a&(n-1) if n is a power of 2.
@@ -201,7 +217,11 @@ struct Time
     /*0x02*/ s8 hours;
     /*0x03*/ s8 minutes;
     /*0x04*/ s8 seconds;
-};
+}
+#ifdef PORTABLE
+ALIGNED(4)
+#endif
+;
 
 struct Pokedex
 {
@@ -370,7 +390,11 @@ struct BattleDomeTrainer
     u16 isEliminated:1;
     u16 eliminatedAt:2;
     u16 forfeited:3;
-};
+}
+#ifdef PORTABLE
+ALIGNED(4)
+#endif
+;
 
 #define DOME_TOURNAMENT_TRAINERS_COUNT 16
 #define BATTLE_TOWER_RECORD_COUNT 5
@@ -602,7 +626,11 @@ struct Pokeblock
     u8 bitter;
     u8 sour;
     u8 feel;
-};
+}
+#ifdef PORTABLE
+ALIGNED(4)
+#endif
+;
 
 struct Roamer
 {
@@ -715,7 +743,11 @@ typedef union OldMan
     struct MauvilleOldManTrader trader;
     struct MauvilleManStoryteller storyteller;
     u8 filler[0x40];
-} OldMan;
+}
+#ifdef PORTABLE
+ALIGNED(4)
+#endif
+OldMan;
 
 #define LINK_B_RECORDS_COUNT 5
 
@@ -768,7 +800,11 @@ struct Mail
     /*0x1A*/ u8 trainerId[TRAINER_ID_LENGTH];
     /*0x1E*/ u16 species;
     /*0x20*/ u16 itemId;
-};
+}
+#ifdef PORTABLE
+ALIGNED(4)
+#endif
+;
 
 struct DaycareMail
 {
