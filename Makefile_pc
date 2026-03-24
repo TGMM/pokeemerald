@@ -86,7 +86,7 @@ include make_tools.mk
 
 SHA1 := $(shell { command -v sha1sum || command -v shasum; } 2>/dev/null) -c
 GFX := $(TOOLS_DIR)/gbagfx/gbagfx$(EXE)
-AIF := $(TOOLS_DIR)/aif2pcm/aif2pcm$(EXE)
+WAV2AGB := $(TOOLS_DIR)/wav2agb/wav2agb$(EXE)
 MID := $(TOOLS_DIR)/mid2agb/mid2agb$(EXE)
 SCANINC := $(TOOLS_DIR)/scaninc/scaninc$(EXE)
 PREPROC := $(TOOLS_DIR)/preproc/preproc$(EXE)
@@ -173,8 +173,7 @@ compare: ; @$(MAKE) COMPARE=1
 clean: mostlyclean clean-tools
 
 mostlyclean: tidy
-	rm -f $(SAMPLE_SUBDIR)/*.bin
-	rm -f $(CRY_SUBDIR)/*.bin
+	find sound -iname '*.bin' -exec rm {} +
 	rm -f $(MID_SUBDIR)/*.s
 	find . \( -iname '*.1bpp' -o -iname '*.4bpp' -o -iname '*.8bpp' -o -iname '*.gbapal' -o -iname '*.lz' -o -iname '*.rl' -o -iname '*.latfont' -o -iname '*.hwjpnfont' -o -iname '*.fwjpnfont' \) -exec rm {} +
 	rm -f $(DATA_ASM_SUBDIR)/layouts/layouts.inc $(DATA_ASM_SUBDIR)/layouts/layouts_table.inc
@@ -209,7 +208,7 @@ generated: $(AUTO_GEN_TARGETS)
 %.s: ;
 %.png: ;
 %.pal: ;
-%.aif: ;
+%.wav: ;
 
 %.1bpp: %.png  ; $(GFX) $< $@
 %.4bpp: %.png  ; $(GFX) $< $@
@@ -282,6 +281,10 @@ $(foreach src, $(C_ASM_SRCS), $(eval $(call DATA_ASM_DEP,$(patsubst $(C_SUBDIR)/
 endif
 
 $(SONG_BUILDDIR)/%.o: $(SONG_SUBDIR)/%.s
+	$(ASM_PSEUDO_OP_CONV) $< | $(AS) $(ASFLAGS) -I sound -o $@
+	$(FIX_UNDERSCORE) $@
+
+$(MID_BUILDDIR)/%.o: $(MID_SUBDIR)/%.s
 	$(ASM_PSEUDO_OP_CONV) $< | $(AS) $(ASFLAGS) -I sound -o $@
 	$(FIX_UNDERSCORE) $@
 
