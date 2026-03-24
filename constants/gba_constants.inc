@@ -30,7 +30,11 @@
 	.set OAM, 0x7000000
 
 	.set ROM,      0x8000000
+	.ifdef PORTABLE
+	.set ROM_SIZE, 0 @ PC: no ROM mirror, so don't offset function pointers
+	.else
 	.set ROM_SIZE, 0x2000000
+	.endif
 
 	.set SOUND_INFO_PTR, 0x3007FF0
 	.set INTR_CHECK,     0x3007FF8
