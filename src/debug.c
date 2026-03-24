@@ -1667,12 +1667,17 @@ static u8 *ConvertQ22_10ToDecimalString(u8 *string, u32 q22_10, u32 decimalDigit
 
 void CheckROMSize(struct ScriptContext *ctx)
 {
+#ifndef PORTABLE
     extern u8 __rom_end[];
     u32 currROMSizeB = __rom_end - (const u8 *)ROM_START;
     u32 currROMSizeKB = (currROMSizeB + 1023) / 1024;
     u32 currROMFreeKB = ((const u8 *)ROM_END - __rom_end) / 1024;
     ConvertQ22_10ToDecimalString(gStringVar1, currROMSizeKB, 2, ROUND_CEILING);
     ConvertQ22_10ToDecimalString(gStringVar2, currROMFreeKB, 2, ROUND_FLOOR);
+#else
+    ConvertQ22_10ToDecimalString(gStringVar1, 0, 2, ROUND_CEILING);
+    ConvertQ22_10ToDecimalString(gStringVar2, 0, 2, ROUND_FLOOR);
+#endif
 }
 
 static void DebugAction_Util_Weather(u8 taskId)

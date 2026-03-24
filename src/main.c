@@ -131,7 +131,7 @@ void AgbMain(void)
 
     gLinkTransferringData = FALSE;
 
-#ifndef NDEBUG
+#if !defined(NDEBUG) && !defined(PORTABLE)
 #if (LOG_HANDLER == LOG_HANDLER_MGBA_PRINT)
     (void) MgbaOpen();
 #elif (LOG_HANDLER == LOG_HANDLER_AGB_PRINT)

@@ -182,8 +182,10 @@ void SetSpeaker(struct ScriptContext *ctx)
 
     if (arg < SP_NAME_COUNT)
         speaker = gSpeakerNamesTable[arg];
+#ifndef PORTABLE
     else if (arg >= ROM_START && arg < ROM_END)
         speaker = (const u8 *)arg;
+#endif
 
     gSpeakerName = speaker;
 }

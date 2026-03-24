@@ -462,6 +462,7 @@ void MysteryGift_LoadLinkGameData(struct MysteryGiftLinkGameData *data, bool32 i
     memcpy(data->romHeaderGameCode, RomHeaderGameCode, GAME_CODE_LENGTH);
     data->romHeaderSoftwareVersion = RomHeaderSoftwareVersion;
 #endif
+#endif //FREE_MYSTERY_GIFT
 }
 
 bool32 MysteryGift_ValidateLinkGameData(const struct MysteryGiftLinkGameData *data, bool32 isWonderNews)

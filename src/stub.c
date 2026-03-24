@@ -2,6 +2,7 @@
 #include "main.h"
 
 #include <stdio.h>
+#include <string.h>
 
 #define STUB_FUNC(func) func { puts("function \"" #func "\" is a stub"); }
 #define STUB_FUNC_BLOCK(func, block) func { puts("function \"" #func "\" is a stub"); block }
@@ -225,3 +226,84 @@ STUB_FUNC(void MultiBootStartProbe(struct MultiBootParam *mp))
 STUB_FUNC(void MultiBootStartMaster(struct MultiBootParam *mp, const u8 *srcp, int length, u8 palette_color, s8 palette_speed))
 STUB_FUNC(int MultiBootCheckComplete(struct MultiBootParam *mp))
 //STUB_FUNC(IntrFunc IntrSIO32(void))
+
+// gBattleTestRunnerState is defined in test_runner_battle.c (only built with TESTING=1).
+// Provide a NULL stub for the PC build (TESTING=0). The code paths that dereference it
+// are behind runtime checks (gTestRunnerHeadless/IsMultibattleTest) that evaluate to false,
+// but at -O0 the compiler doesn't eliminate them, so the symbol must exist.
+struct BattleTestRunnerState;
+struct BattleTestRunnerState *const gBattleTestRunnerState = NULL;
+
+// Expansion-specific stubs for PC build
+
+// gInitialMainCB2 is normally a linker alias to CB2_InitCopyrightScreenAfterBootup
+extern void CB2_InitCopyrightScreenAfterBootup(void);
+void gInitialMainCB2(void)
+{
+    CB2_InitCopyrightScreenAfterBootup();
+}
+
+// ReInitializeEWRAM is defined in crt0.s - not needed on PC
+STUB_FUNC_QUIET(void ReInitializeEWRAM(void))
+
+// __iwram_end is a linker symbol on GBA - provide dummy for stack check in assertf.c
+char __iwram_end[1];
+
+// FastUnsafeCopy32 is defined in decompress_asm.s (ARM assembly)
+// It copies `size` bytes from src to dest using 32-bit transfers
+void FastUnsafeCopy32(void *dest, const void *src, u32 size)
+{
+    memcpy(dest, src, size);
+}
+
+// LZ77UnCompWRAMOptimized and its end marker are ARM assembly routines
+// that get copied to IWRAM. On PC, the decompress code that uses them
+// falls back to the BIOS LZ77 implementation (in platform/bios.c).
+// Provide empty symbols so the linker is happy.
+const u32 LZ77UnCompWRAMOptimized[1] = {0};
+const u32 LZ77UnCompWRAMOptimized_end[1] = {0};
+
+// BitUnPack is a GBA BIOS SWI function used by assertf.c
+// It unpacks bit-packed data (1bpp -> 4bpp for crash screen font)
+void BitUnPack(const void *src, void *dest, const void *args)
+{
+    // Simple 1bpp -> 4bpp conversion (each bit becomes a 4-bit value)
+    // args layout: {u16 srcLen, u8 srcBitWidth, u8 destBitWidth, u32 dataOffset_and_zeroFlag}
+    const u8 *argBytes = (const u8 *)args;
+    u16 srcLen = argBytes[0] | (argBytes[1] << 8);
+    u8 srcBitWidth = argBytes[2];
+    u8 destBitWidth = argBytes[3];
+    u32 dataOffset = argBytes[4] | (argBytes[5] << 8) | (argBytes[6] << 16) | ((argBytes[7] & 0x7F) << 24);
+    bool8 zeroFlag = (argBytes[7] & 0x80) != 0;
+
+    const u8 *srcPtr = (const u8 *)src;
+    u32 *destPtr = (u32 *)dest;
+    u32 destBuf = 0;
+    u32 destBitPos = 0;
+    u32 srcBitPos = 0;
+
+    u32 srcMask = (1 << srcBitWidth) - 1;
+
+    for (u32 i = 0; i < srcLen * 8; i += srcBitWidth)
+    {
+        u32 byte = srcPtr[srcBitPos / 8];
+        u32 val = (byte >> (srcBitPos % 8)) & srcMask;
+        srcBitPos += srcBitWidth;
+
+        if (val != 0 || !zeroFlag)
+            val += dataOffset;
+
+        destBuf |= val << destBitPos;
+        destBitPos += destBitWidth;
+
+        if (destBitPos >= 32)
+        {
+            *destPtr++ = destBuf;
+            destBuf = 0;
+            destBitPos = 0;
+        }
+    }
+
+    if (destBitPos > 0)
+        *destPtr = destBuf;
+}

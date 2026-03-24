@@ -296,6 +296,16 @@ void CFile::TryConvertIncbin()
     if (incbinType == -1)
         return;
 
+    // Don't match if preceded by an identifier character (word boundary check).
+    // This prevents false matches like "WaitForFlashWrite_DUMMY" matching "DUMMY".
+    if (m_pos > 0 && IsIdentifierChar(m_buffer[m_pos - 1]))
+        return;
+
+    // Don't match if followed by an identifier character (word boundary check).
+    long endPos = m_pos + idents[incbinType].length();
+    if (endPos < m_size && IsIdentifierChar(m_buffer[endPos]))
+        return;
+
     int size = 1 << (incbinType / 2);
     if (size > 4)
         size = 4;

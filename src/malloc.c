@@ -247,5 +247,9 @@ const char *MemBlockLocation(const struct MemBlock *block)
     if (!block->allocated)
         return NULL;
 
+#ifndef PORTABLE
     return (const char *)(ROM_START | (block->locationHi << 14) | block->locationLo);
+#else
+    return "PORTABLE";
+#endif
 }
