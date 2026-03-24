@@ -24,6 +24,9 @@
 #include "main.h"
 #include "trainer_hill.h"
 #include "test_runner.h"
+#ifdef PORTABLE
+#include "platform.h"
+#endif
 #include "constants/rgb.h"
 
 static void VBlankIntr(void);
@@ -61,6 +64,10 @@ const IntrFunc gIntrTableTemplate[] =
 };
 
 #define INTR_COUNT ((int)(sizeof(gIntrTableTemplate)/sizeof(IntrFunc)))
+
+#ifdef PORTABLE
+u8 gHeap[HEAP_SIZE];
+#endif
 
 COMMON_DATA u16 gKeyRepeatStartDelay = 0;
 COMMON_DATA bool8 gLinkTransferringData = 0;
@@ -100,7 +107,9 @@ void AgbMain(void)
     InitIntrHandlers();
     m4aSoundInit();
     EnableVCountIntrAtLine150();
+#ifndef PORTABLE
     InitRFU();
+#endif
     RtcInit();
     CheckForFlashMemory();
     InitMainCallbacks();
@@ -115,8 +124,10 @@ void AgbMain(void)
 
     gSoftResetDisabled = FALSE;
 
+#ifndef PORTABLE
     if (gFlashMemoryPresent != TRUE)
         SetMainCallback2(CB2_FlashNotDetectedScreen);
+#endif
 
     gLinkTransferringData = FALSE;
 
@@ -268,7 +279,11 @@ void InitKeys(void)
 
 static void ReadKeys(void)
 {
+#ifndef PORTABLE
     u16 keyInput = REG_KEYINPUT ^ KEYS_MASK;
+#else
+    u16 keyInput = Platform_GetKeyInput();
+#endif
     gMain.newKeysRaw = keyInput & ~gMain.heldKeysRaw;
     gMain.newKeys = gMain.newKeysRaw;
     gMain.newAndRepeatedKeys = gMain.newKeysRaw;
@@ -426,6 +441,9 @@ static void IntrDummy(void)
 
 static void WaitForVBlank(void)
 {
+#ifdef PORTABLE
+    VBlankIntrWait();
+#else
     gMain.intrCheck &= ~INTR_FLAG_VBLANK;
 
     if (gWirelessCommType != 0)
@@ -439,6 +457,7 @@ static void WaitForVBlank(void)
     {
         VBlankIntrWait();
     }
+#endif
 }
 
 void SetTrainerHillVBlankCounter(u32 *counter)
