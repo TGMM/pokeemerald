@@ -441,6 +441,10 @@ bool8 IsDma3ManagerBusyWithBgCopy(void)
 {
     int i;
 
+#ifdef PORTABLE
+    // HACK: this is often called in a tight loop, not allowing the VBlank thread to run. Suspend thread for now.
+    VBlankIntrWait();
+#endif
     for (i = 0; i < 0x80; i++)
     {
         u8 div = i / 0x20;
@@ -1238,10 +1242,14 @@ bool32 IsInvalidBg32(u8 bg)
 
 bool32 IsTileMapOutsideWram(u8 bg)
 {
+#ifndef PORTABLE
     if (sGpuBgConfigs2[bg].tilemap > (void *)IWRAM_END)
         return TRUE;
     else if (sGpuBgConfigs2[bg].tilemap == NULL)
         return TRUE;
     else
         return FALSE;
+#else
+    return sGpuBgConfigs2[bg].tilemap == NULL;
+#endif
 }
