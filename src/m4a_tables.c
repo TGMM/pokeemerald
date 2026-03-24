@@ -5,6 +5,44 @@
 // for now.
 void *const gMPlayJumpTableTemplate[] =
 {
+#ifdef PORTABLE
+    MP2K_event_fine,
+    MP2K_event_goto,
+    MP2K_event_patt,
+    MP2K_event_pend,
+    MP2K_event_rept,
+    MP2K_event_fine,
+    MP2K_event_fine,
+    MP2K_event_fine,
+    MP2K_event_fine,
+    MP2K_event_prio,
+    MP2K_event_tempo,
+    MP2K_event_keysh,
+    MP2K_event_voice,
+    MP2K_event_vol,
+    MP2K_event_pan,
+    MP2K_event_bend,
+    MP2K_event_bendr,
+    MP2K_event_lfos,
+    MP2K_event_lfodl,
+    MP2K_event_mod,
+    MP2K_event_modt,
+    MP2K_event_fine,
+    MP2K_event_fine,
+    MP2K_event_tune,
+    MP2K_event_fine,
+    MP2K_event_fine,
+    MP2K_event_fine,
+    MP2K_event_port,
+    MP2K_event_fine,
+    MP2K_event_endtie,
+    SampleFreqSet,
+    TrackStop,
+    FadeOutBody,
+    TrkVolPitSet,
+    MP2KClearChain,
+    SoundMainBTM,
+#else
     ply_fine,
     ply_goto,
     ply_patt,
@@ -41,6 +79,7 @@ void *const gMPlayJumpTableTemplate[] =
     TrkVolPitSet,
     RealClearChain,
     SoundMainBTM,
+#endif
 };
 
 // This is a table of deltas between sample values in compressed PCM data.
@@ -112,7 +151,11 @@ const u16 gPcmSamplesPerVBlankTable[] =
     528,
     608,
     672,
+#ifdef PORTABLE
+    701,
+#else
     704,
+#endif
 };
 
 const u8 gCgbScaleTable[] =
@@ -251,7 +294,9 @@ const u8 gClockTable[] =
 #define xRELE  0x07
 #define xIECV  0x08
 #define xIECL  0x09
+#ifndef PORTABLE
 #define xWAIT  0x0c
+#endif
 
 #define EOT    0xce
 #define TIE    0xcf
@@ -283,8 +328,13 @@ const struct PokemonCrySong gPokemonCrySongTemplate =
     .tieCmd = TIE,
     .tieKeyValue = 60, // default is Cn3
     .tieVelocityValue = 127,
+#ifdef PORTABLE
+    .unkCmd0C = {XCMD, 0x0C},
+    .unkCmd0CParam = 60,
+#else
     .xwaitCmd = {XCMD, xWAIT},
     .length = 60, // frames to wait
+#endif
     .end = {EOT, FINE}
 };
 
@@ -302,6 +352,10 @@ const XcmdFunc gXcmdTable[] =
     ply_xiecl,
     ply_xleng,
     ply_xswee,
+#ifdef PORTABLE
+    ply_xcmd_0C,
+#else
     ply_xwait,
+#endif
     ply_xcmd_0D,
 };
