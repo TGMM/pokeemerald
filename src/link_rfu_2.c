@@ -326,9 +326,9 @@ void InitRFU(void)
     REG_IME = INTR_FLAG_VBLANK;
 }
 
+#ifndef PORTABLE
 void InitRFUAPI(void)
 {
-#ifndef PORTABLE
     if (!rfu_initializeAPI((void *)gRfuAPIBuffer, sizeof(gRfuAPIBuffer), &gIntrTable[1], TRUE))
     {
         gLinkType = 0;
@@ -337,8 +337,8 @@ void InitRFUAPI(void)
         ResetLinkRfuGFLayer();
         rfu_setTimerInterrupt(3, &gIntrTable[2]);
     }
-#endif
 }
+#endif
 
 static void Task_ParentSearchForChildren(u8 taskId)
 {

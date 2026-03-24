@@ -1,22 +1,83 @@
-PREFIX := i686-w64-mingw32-
-OBJCOPY := $(PREFIX)objcopy
-CC := $(PREFIX)gcc
-AS := $(PREFIX)as
+# =============================================================================
+# Makefile_pc — PC platform build for pokeemerald
+# Supports: Linux (native, 32-bit), Windows (mingw32 cross-compile)
+# =============================================================================
 
-SDL_DIR := /home/pokeemerald/SDL2-2.0.14/i686-w64-mingw32
-ASM_PSEUDO_OP_CONV := sed -e 's/\.4byte/\.int/g;s/\.2byte/\.short/g'
-#FIX_UNDERSCORE is required for 32 bit windows
-FIX_UNDERSCORE := $(OBJCOPY) --prefix-symbol _
+# ---- Host / cross-compile detection ----------------------------------------
+# Set CROSS=mingw32 to force Windows cross-compile from Linux.
+# Otherwise, auto-detect: native on Linux, mingw32 on Windows.
 
-export CPP := $(PREFIX)cpp
-export LD := $(PREFIX)ld
-
-ifeq ($(OS),Windows_NT)
-EXE := .exe
+ifeq ($(CROSS),mingw32)
+  # Cross-compiling for Windows from Linux
+  PREFIX := i686-w64-mingw32-
+  HOST_OS := windows
+else ifeq ($(OS),Windows_NT)
+  # Native Windows build (MSYS2/MinGW)
+  PREFIX := i686-w64-mingw32-
+  HOST_OS := windows
 else
-EXE :=
+  # Native Linux build
+  PREFIX :=
+  HOST_OS := linux
 endif
 
+OBJCOPY := $(PREFIX)objcopy
+CC      := $(PREFIX)gcc
+AS      := $(PREFIX)as
+
+export LD  := $(PREFIX)ld
+
+# On Linux, use 'gcc -E -m32' as preprocessor to get correct multilib headers.
+# On Windows, bare cpp is fine since the mingw32 toolchain is natively 32-bit.
+ifeq ($(HOST_OS),linux)
+  export CPP := $(CC) -E -m32
+  # For piped data assembly, CPP must read from stdin:
+  DATA_CPP = $(CPP) -x assembler-with-cpp -
+else
+  export CPP := $(PREFIX)cpp
+  DATA_CPP = $(CPP)
+endif
+
+# ---- ASM directive conversion (GBA → x86/PE) --------------------------------
+# Convert ARM assembly directives to x86 equivalents and strip ARM-style
+# comments (@ to end of line) which are invalid on x86.
+# Three sed expressions:
+#   1. Convert .4byte/.2byte/.word to .int/.short/.int (x86 equivalents)
+#   2. Strip inline @ comments (preceded by whitespace)
+#   3. Delete full-line @ comments (line starts with optional whitespace then @)
+ASM_PSEUDO_OP_CONV := sed -e 's/\.4byte/.int/g;s/\.2byte/.short/g;s/\.word\b/.int/g' -e 's/[[:space:]]@.*//' -e '/^[[:space:]]*@/d'
+
+# FIX_UNDERSCORE is required for 32-bit Windows PE/COFF (leading _ convention).
+# On Linux ELF, symbols have no leading underscore, so this must be a no-op.
+ifeq ($(HOST_OS),windows)
+  FIX_UNDERSCORE := $(OBJCOPY) --prefix-symbol _
+else
+  FIX_UNDERSCORE := @true
+endif
+
+# ---- Platform / SDL2 --------------------------------------------------------
+TARGET_PLATFORM := PLATFORM_SDL2
+TILE_RENDERER   := RENDERER_EASY_DRAW
+
+ifeq ($(HOST_OS),linux)
+  # Use pkg-config for SDL2. User must have libsdl2-dev:i386 installed for -m32.
+  SDL_CFLAGS  := $(shell PKG_CONFIG_PATH=/usr/lib/i386-linux-gnu/pkgconfig pkg-config --cflags sdl2 2>/dev/null)
+  SDL_LDFLAGS := $(shell PKG_CONFIG_PATH=/usr/lib/i386-linux-gnu/pkgconfig pkg-config --libs sdl2 2>/dev/null)
+else
+  # Windows: point SDL_DIR at your i686 SDL2 development tree
+  SDL_DIR     ?= /home/pokeemerald/SDL2-2.0.14/i686-w64-mingw32
+  SDL_CFLAGS  := -I$(SDL_DIR)/include
+  SDL_LDFLAGS := -L$(SDL_DIR)/lib
+endif
+
+# ---- EXE extension -----------------------------------------------------------
+ifeq ($(HOST_OS),windows)
+  EXE := .exe
+else
+  EXE :=
+endif
+
+# ---- Basic settings ----------------------------------------------------------
 all: rom
 
 TITLE       := POKEMON EMER
@@ -24,75 +85,107 @@ GAME_CODE   := BPEE
 MAKER_CODE  := 01
 REVISION    := 0
 MODERN      := 1
-TARGET_PLATFORM := PLATFORM_SDL2
-TILE_RENDERER := RENDERER_EASY_DRAW
 
 SHELL := /bin/bash -o pipefail
 
-ELF = $(ROM:.exe=.elf)
-MAP = $(ROM:.exe=.map)
+ROM     := pokeemerald$(EXE)
+OBJ_DIR := build/pc
+ELF      = $(ROM:.exe=.elf)
+MAP      = pokeemerald.map
 
-C_SUBDIR = src
-GFLIB_SUBDIR = gflib
-ASM_SUBDIR = asm
+# ---- Directory layout --------------------------------------------------------
+C_SUBDIR        = src
+GFLIB_SUBDIR    = gflib
+ASM_SUBDIR      = asm
 DATA_SRC_SUBDIR = src/data
 DATA_ASM_SUBDIR = data
-SONG_SUBDIR = sound/songs
-MID_SUBDIR = sound/songs/midi
+SONG_SUBDIR     = sound/songs
+MID_SUBDIR      = sound/songs/midi
 
-C_BUILDDIR = $(OBJ_DIR)/$(C_SUBDIR)
-GFLIB_BUILDDIR = $(OBJ_DIR)/$(GFLIB_SUBDIR)
-ASM_BUILDDIR = $(OBJ_DIR)/$(ASM_SUBDIR)
+C_BUILDDIR        = $(OBJ_DIR)/$(C_SUBDIR)
+GFLIB_BUILDDIR    = $(OBJ_DIR)/$(GFLIB_SUBDIR)
+ASM_BUILDDIR      = $(OBJ_DIR)/$(ASM_SUBDIR)
 DATA_ASM_BUILDDIR = $(OBJ_DIR)/$(DATA_ASM_SUBDIR)
-SONG_BUILDDIR = $(OBJ_DIR)/$(SONG_SUBDIR)
-MID_BUILDDIR = $(OBJ_DIR)/$(MID_SUBDIR)
+SONG_BUILDDIR     = $(OBJ_DIR)/$(SONG_SUBDIR)
+MID_BUILDDIR      = $(OBJ_DIR)/$(MID_SUBDIR)
 
+# ---- Assembler flags ---------------------------------------------------------
 ASFLAGS := --32 --defsym MODERN=$(MODERN) --defsym PORTABLE=1 --defsym UBFIX=1
 
+# ---- Compiler flags ----------------------------------------------------------
 GCC_VER := $(shell $(CC) -dumpversion)
 
-CC1 	:= $(shell $(PREFIX)gcc --print-prog-name=cc1) -quiet
-override CFLAGS += -Wno-trigraphs -Wimplicit -Wparentheses -Wunused -m32 -std=gnu99 -fleading-underscore -fno-dce -fno-builtin -Wno-unused-function -DPORTABLE -DNONMATCHING -D UBFIX -DMODERN=$(MODERN)
-ROM		:= pokeemerald.exe
-OBJ_DIR	:= build/pc
-
-CPPFLAGS := -iquote include -iquote $(GFLIB_SUBDIR) -Wno-trigraphs -D NONMATCHING -D PORTABLE -D $(TARGET_PLATFORM) -D $(TILE_RENDERER) -D MODERN=$(MODERN) -D UBFIX -I$(SDL_DIR)/include -L$(SDL_DIR)/lib
-
-LDFLAGS = -Map ../../$(MAP)
-
-PLATFORM_INCLUDES := 
-
-#Windows only
-ifneq ($(NO_STD_LIB),1)
-	PLATFORM_INCLUDES += -lmingw32
+# CC1 is used on Windows for the cc1 -> as pipeline.
+# On Linux we use 'gcc -c -x cpp-output' instead, so CC1 is not needed.
+ifeq ($(HOST_OS),windows)
+  CC1 := $(shell $(CC) --print-prog-name=cc1) -quiet
 endif
 
-ifeq ($(TARGET_PLATFORM), PLATFORM_SDL2)
-	PLATFORM_INCLUDES += -lSDL2main -lSDL2.dll
+# Common C flags for both platforms
+COMMON_CFLAGS := -Wno-trigraphs -Wimplicit -Wparentheses -Wunused -m32 \
+    -std=gnu99 -fno-dce -fno-builtin -Wno-unused-function \
+    -DPORTABLE -DNONMATCHING -DUBFIX -DMODERN=$(MODERN)
+
+ifeq ($(HOST_OS),windows)
+  # Windows PE/COFF needs leading underscores on C symbols
+  override CFLAGS += $(COMMON_CFLAGS) -fleading-underscore
+else
+  # Linux ELF: no leading underscore
+  override CFLAGS += $(COMMON_CFLAGS)
 endif
-	
-ifeq ($(TARGET_PLATFORM), PLATFORM_WIN32)
-	ifeq ($(NO_STD_LIB),1) 
-		PLATFORM_INCLUDES += -Wl,-e__main -nostdlib
-		CPPFLAGS += -D NO_STD_LIB_ENABLED
-	endif
-	PLATFORM_INCLUDES += -lkernel32 -luser32 -lgdi32
+
+CPPFLAGS := -iquote include -iquote $(GFLIB_SUBDIR) -Wno-trigraphs \
+    -DNONMATCHING -DPORTABLE -D$(TARGET_PLATFORM) -D$(TILE_RENDERER) \
+    -DMODERN=$(MODERN) -DUBFIX \
+    $(SDL_CFLAGS)
+
+ifeq ($(DINFO),1)
+  override CFLAGS += -g -O0
+else
+  override CFLAGS += -O3
+endif
+
+# ---- Linker flags ------------------------------------------------------------
+PLATFORM_LIBS :=
+
+ifeq ($(HOST_OS),windows)
+  ifneq ($(NO_STD_LIB),1)
+    PLATFORM_LIBS += -lmingw32
+  endif
+  ifeq ($(TARGET_PLATFORM),PLATFORM_SDL2)
+    PLATFORM_LIBS += -lSDL2main -lSDL2.dll
+  endif
+  ifeq ($(TARGET_PLATFORM),PLATFORM_WIN32)
+    ifeq ($(NO_STD_LIB),1)
+      PLATFORM_LIBS += -Wl,-e__main -nostdlib
+      CPPFLAGS += -DNO_STD_LIB_ENABLED
+    endif
+    PLATFORM_LIBS += -lkernel32 -luser32 -lgdi32
+  endif
+  PLATFORM_LIBS += -lwinmm -lxinput
+else
+  # Linux
+  ifeq ($(TARGET_PLATFORM),PLATFORM_SDL2)
+    PLATFORM_LIBS += $(SDL_LDFLAGS)
+  endif
+  PLATFORM_LIBS += -lm -lpthread
 endif
 
 LIB := $(LIBPATH) -lgcc -lc
 
+# ---- Tools -------------------------------------------------------------------
 AUTO_GEN_TARGETS :=
 include make_tools.mk
 
-SHA1 := $(shell { command -v sha1sum || command -v shasum; } 2>/dev/null) -c
-GFX := $(TOOLS_DIR)/gbagfx/gbagfx$(EXE)
-WAV2AGB := $(TOOLS_DIR)/wav2agb/wav2agb$(EXE)
-MID := $(TOOLS_DIR)/mid2agb/mid2agb$(EXE)
-SCANINC := $(TOOLS_DIR)/scaninc/scaninc$(EXE)
-PREPROC := $(TOOLS_DIR)/preproc/preproc$(EXE)
+SHA1     := $(shell { command -v sha1sum || command -v shasum; } 2>/dev/null) -c
+GFX      := $(TOOLS_DIR)/gbagfx/gbagfx$(EXE)
+WAV2AGB  := $(TOOLS_DIR)/wav2agb/wav2agb$(EXE)
+MID      := $(TOOLS_DIR)/mid2agb/mid2agb$(EXE)
+SCANINC  := $(TOOLS_DIR)/scaninc/scaninc$(EXE)
+PREPROC  := $(TOOLS_DIR)/preproc/preproc$(EXE)
 RAMSCRGEN := $(TOOLS_DIR)/ramscrgen/ramscrgen$(EXE)
-FIX := $(TOOLS_DIR)/gbafix/gbafix$(EXE)
-MAPJSON := $(TOOLS_DIR)/mapjson/mapjson$(EXE)
+FIX      := $(TOOLS_DIR)/gbafix/gbafix$(EXE)
+MAPJSON  := $(TOOLS_DIR)/mapjson/mapjson$(EXE)
 JSONPROC := $(TOOLS_DIR)/jsonproc/jsonproc$(EXE)
 
 MAKEFLAGS += --no-print-directory
@@ -107,14 +200,12 @@ MAKEFLAGS += --no-print-directory
 # Secondary expansion is required for dependency variables in object rules.
 .SECONDEXPANSION:
 
-.PHONY: all rom clean compare tidy mostlyclean libagbsyscall modern tidymodern tidynonmodern
+.PHONY: all rom clean compare tidy mostlyclean libagbsyscall modern tidymodern tidynonmodern preproc_asm
 
 infoshell = $(foreach line, $(shell $1 | sed "s/ /__SPACE__/g"), $(info $(subst __SPACE__, ,$(line))))
 
 # Build tools when building the rom
 # Disable dependency scanning for clean/tidy/tools
-# Use a separate minimal makefile for speed
-# Since we don't need to reload most of this makefile
 ifeq (,$(filter-out all rom compare modern libagbsyscall syms,$(MAKECMDGOALS)))
 $(call infoshell, $(MAKE) -f make_tools.mk)
 $(call infoshell, $(MAKE) generated)
@@ -122,17 +213,16 @@ else
 NODEP ?= 1
 endif
 
-# Build tools when building the rom
-# Disable dependency scanning for clean/tidy/tools
 ifeq (,$(filter-out all rom compare modern,$(MAKECMDGOALS)))
 $(call infoshell, $(MAKE) tools)
 else
 NODEP := 1
 endif
 
+# ---- Source file discovery ----------------------------------------------------
 C_SRCS_IN := $(wildcard $(C_SUBDIR)/*.c $(C_SUBDIR)/*/*.c $(C_SUBDIR)/*/*/*.c)
-C_SRCS := $(foreach src,$(C_SRCS_IN),$(if $(findstring .inc.c,$(src)),,$(src)))
-C_OBJS := $(patsubst $(C_SUBDIR)/%.c,$(C_BUILDDIR)/%.o,$(C_SRCS))
+C_SRCS    := $(foreach src,$(C_SRCS_IN),$(if $(findstring .inc.c,$(src)),,$(src)))
+C_OBJS    := $(patsubst $(C_SUBDIR)/%.c,$(C_BUILDDIR)/%.o,$(C_SRCS))
 
 GFLIB_SRCS := $(wildcard $(GFLIB_SUBDIR)/*.c)
 GFLIB_OBJS := $(patsubst $(GFLIB_SUBDIR)/%.c,$(GFLIB_BUILDDIR)/%.o,$(GFLIB_SRCS))
@@ -162,12 +252,12 @@ SUBDIRS  := $(sort $(dir $(OBJS)))
 
 $(shell mkdir -p $(SUBDIRS))
 
+# ---- Top-level targets -------------------------------------------------------
 rom: $(ROM)
 ifeq ($(COMPARE),1)
 	@$(SHA1) rom.sha1
 endif
 
-# For contributors to make sure a change didn't affect the contents of the ROM.
 compare: ; @$(MAKE) COMPARE=1
 
 clean: mostlyclean clean-tools
@@ -182,26 +272,37 @@ mostlyclean: tidy
 	rm -f $(AUTO_GEN_TARGETS)
 
 tidy:
-	rm -f $(ROM)$(EXE) $(ELF) $(MAP)
-	rm -r $(OBJ_DIR)
+	rm -f $(ROM) $(ELF) $(MAP)
+	rm -rf $(OBJ_DIR)
 ifeq ($(MODERN),0)
 	@$(MAKE) tidy MODERN=1
 endif
 
 clean-platform:
-	rm -f $(ROM)$(EXE) $(ELF) $(MAP)
-	rm -r $(OBJ_DIR)/src/platform
+	rm -f $(ROM) $(ELF) $(MAP)
+	rm -rf $(OBJ_DIR)/src/platform
 
 clean-generated:
 	-rm -f $(AUTO_GEN_TARGETS)
-	@rm -f $(AUTO_GEN_TARGETS)
 	@echo "rm -f <AUTO_GEN_TARGETS>"
 
+# ---- Shared build rules (graphics, maps, audio) -----------------------------
 include graphics_file_rules.mk
 include map_data_rules.mk
 include spritesheet_rules.mk
 include json_data_rules.mk
 include audio_rules.mk
+
+# Override map_data_rules.mk rules for maps.o and map_events.o to use
+# our AS_FROM_BUILDDIR (which handles @ comment stripping via pre-processed includes).
+# Prerequisites from map_data_rules.mk are merged automatically by Make.
+# The "overriding recipe" warnings are expected and harmless.
+$(DATA_ASM_BUILDDIR)/maps.o: $(PREPROC_ASM_STAMP)
+	$(PREPROC) $< charmap.txt | $(DATA_CPP) -I include | $(PREPROC) -ie $< charmap.txt | $(ASM_PSEUDO_OP_CONV) | $(AS_IN_BUILDDIR) -o $(CURDIR)/$@ -)
+	$(FIX_UNDERSCORE) $@
+$(DATA_ASM_BUILDDIR)/map_events.o: $(PREPROC_ASM_STAMP)
+	$(PREPROC) $< charmap.txt | $(DATA_CPP) -I include | $(PREPROC) -ie $< charmap.txt | $(ASM_PSEUDO_OP_CONV) | $(AS_IN_BUILDDIR) -o $(CURDIR)/$@ -)
+	$(FIX_UNDERSCORE) $@
 
 generated: $(AUTO_GEN_TARGETS)
 
@@ -218,23 +319,34 @@ generated: $(AUTO_GEN_TARGETS)
 %.lz: % ; $(GFX) $< $@
 %.rl: % ; $(GFX) $< $@
 
+# ---- C source compilation ----------------------------------------------------
+# Pipeline: CPP (preprocess) -> preproc (charmap transform) -> compile to .o
+#
+# On Linux, we use 'gcc -m32 -c -x cpp-output' to compile the preprocessed
+# output directly. This avoids cc1 multilib header issues and the extra
+# assembly step.
+#
+# On Windows, we keep the original cc1 -> as pipeline since the mingw32
+# toolchain doesn't have these issues.
+
 ifeq ($(NODEP),1)
 $(C_BUILDDIR)/%.o: c_dep :=
 else
 $(C_BUILDDIR)/%.o: c_dep = $(shell [[ -f $(C_SUBDIR)/$*.c ]] && $(SCANINC) -I include -I $(TOOLS_DIR)/agbcc/include -I gflib $(C_SUBDIR)/$*.c)
 endif
 
-ifeq ($(DINFO),1)
-override CFLAGS += -g -O0
+ifeq ($(HOST_OS),linux)
+$(C_BUILDDIR)/%.o : $(C_SUBDIR)/%.c $$(c_dep)
+	@$(CPP) $(CPPFLAGS) $< -o $(C_BUILDDIR)/$*.i
+	@$(PREPROC) $(C_BUILDDIR)/$*.i charmap.txt > $(C_BUILDDIR)/$*.pp.i
+	$(CC) $(CFLAGS) -c -x cpp-output $(C_BUILDDIR)/$*.pp.i -o $@
 else
-override CFLAGS += -O3
-endif
-
 $(C_BUILDDIR)/%.o : $(C_SUBDIR)/%.c $$(c_dep)
 	@$(CPP) $(CPPFLAGS) $< -o $(C_BUILDDIR)/$*.i
 	@$(PREPROC) $(C_BUILDDIR)/$*.i charmap.txt | $(CC1) $(CFLAGS) -o $(C_BUILDDIR)/$*.s
 	@echo -e ".text\n\t.align\t2, 0\n" >> $(C_BUILDDIR)/$*.s
 	$(AS) $(ASFLAGS) -o $@ $(C_BUILDDIR)/$*.s
+endif
 
 ifeq ($(NODEP),1)
 $(GFLIB_BUILDDIR)/%.o: c_dep :=
@@ -242,51 +354,105 @@ else
 $(GFLIB_BUILDDIR)/%.o: c_dep = $(shell [[ -f $(GFLIB_SUBDIR)/$*.c ]] && $(SCANINC) -I include -I $(TOOLS_DIR)/agbcc/include -I gflib $(GFLIB_SUBDIR)/$*.c)
 endif
 
+ifeq ($(HOST_OS),linux)
+$(GFLIB_BUILDDIR)/%.o : $(GFLIB_SUBDIR)/%.c $$(c_dep)
+	@$(CPP) $(CPPFLAGS) $< -o $(GFLIB_BUILDDIR)/$*.i
+	@$(PREPROC) $(GFLIB_BUILDDIR)/$*.i charmap.txt > $(GFLIB_BUILDDIR)/$*.pp.i
+	$(CC) $(CFLAGS) -c -x cpp-output $(GFLIB_BUILDDIR)/$*.pp.i -o $@
+else
 $(GFLIB_BUILDDIR)/%.o : $(GFLIB_SUBDIR)/%.c $$(c_dep)
 	@$(CPP) $(CPPFLAGS) $< -o $(GFLIB_BUILDDIR)/$*.i
 	@$(PREPROC) $(GFLIB_BUILDDIR)/$*.i charmap.txt | $(CC1) $(CFLAGS) -o $(GFLIB_BUILDDIR)/$*.s
 	@echo -e ".text\n\t.align\t2, 0\n" >> $(GFLIB_BUILDDIR)/$*.s
 	$(AS) $(ASFLAGS) -o $@ $(GFLIB_BUILDDIR)/$*.s
+endif
 
-# The dep rules have to be explicit or else missing files won't be reported.
-# As a side effect, they're evaluated immediately instead of when the rule is invoked.
-# It doesn't look like $(shell) can be deferred so there might not be a better way.
+# ---- Pre-process assembly includes for x86 -----------------------------------
+# ARM assembly uses '@' for comments, which x86 'as' doesn't understand.
+# Also convert .4byte/.2byte to .int/.short.
+#
+# Problem: .include directives are resolved by 'as' directly, bypassing any
+# sed pipeline. Solution: pre-process ALL includable .s/.inc files into the
+# build directory, then run 'as' from within $(OBJ_DIR) so that .include
+# finds the pre-processed copies first (CWD takes priority). We pass
+# -I $(CURDIR) as fallback for any files not in the pre-processed tree.
 
+# Directories containing files that are .include'd by assembly sources.
+PREPROC_ASM_DIRS := sound data asm constants
+
+# Find all .s and .inc files in those directories.
+PREPROC_ASM_SRC := $(shell find $(PREPROC_ASM_DIRS) \( -name '*.inc' -o -name '*.s' \) -type f)
+
+# Target paths in the build directory (mirrors the source tree).
+PREPROC_ASM_DST := $(addprefix $(OBJ_DIR)/,$(PREPROC_ASM_SRC))
+
+# Stamp file to track when preprocessing is complete.
+PREPROC_ASM_STAMP := $(OBJ_DIR)/.preproc_asm_done
+
+# Rule: pre-process all assembly include files in parallel via a single
+# shell invocation (much faster than individual make rules for ~3000 files).
+$(PREPROC_ASM_STAMP): $(PREPROC_ASM_SRC)
+	@echo "Pre-processing $(words $(PREPROC_ASM_SRC)) assembly files for x86..."
+	@find $(PREPROC_ASM_DIRS) \( -name '*.inc' -o -name '*.s' \) -type f | \
+		while read -r f; do \
+			mkdir -p "$(OBJ_DIR)/$$(dirname "$$f")" && \
+			sed -e 's/\.4byte/.int/g;s/\.2byte/.short/g;s/\.word\b/.int/g' -e 's/[[:space:]]@.*//' -e '/^[[:space:]]*@/d' "$$f" > "$(OBJ_DIR)/$$f"; \
+		done
+	@touch $@
+
+# Convenience target
+preproc_asm: $(PREPROC_ASM_STAMP)
+
+# Helper: run 'as' from within $(OBJ_DIR) so .include finds pre-processed files.
+# $(CURDIR) is added as fallback include path for files outside the pre-processed tree.
+# Note: pipe into this via: ... | $(AS_IN_BUILDDIR) -o <abs-path> -)
+# The opening paren creates a subshell so 'as' reads stdin (not 'cd').
+# Caller MUST add the closing ')' after the command.
+AS_IN_BUILDDIR = (cd $(CURDIR)/$(OBJ_DIR) && $(AS) $(ASFLAGS) -I $(CURDIR)
+
+# ---- Assembly source rules ---------------------------------------------------
 
 ifeq ($(NODEP),1)
-$(ASM_BUILDDIR)/%.o: $(ASM_SUBDIR)/%.s
-	$(AS) $(ASFLAGS) -o $@ $<
+$(ASM_BUILDDIR)/%.o: $(ASM_SUBDIR)/%.s $(PREPROC_ASM_STAMP)
+	$(ASM_PSEUDO_OP_CONV) $(CURDIR)/$< | $(AS_IN_BUILDDIR) -o $(CURDIR)/$@ -)
 	$(FIX_UNDERSCORE) $@
 else
 define ASM_DEP
-$1: $2 $$(shell $(SCANINC) -I include -I "" $2)
-	$$(AS) $$(ASFLAGS) -o $$@ $$<
-	$(FIX_UNDERSCORE) $$@
+$1: $2 $$(shell $(SCANINC) -I include -I "" $2) $(PREPROC_ASM_STAMP)
+	$$(ASM_PSEUDO_OP_CONV) $$(CURDIR)/$$< | $$(AS_IN_BUILDDIR) -o $$(CURDIR)/$$@ -)
+	$$(FIX_UNDERSCORE) $$@
 endef
 $(foreach src, $(ASM_SRCS), $(eval $(call ASM_DEP,$(patsubst $(ASM_SUBDIR)/%.s,$(ASM_BUILDDIR)/%.o, $(src)),$(src))))
 endif
 
+# ---- Data assembly rules -----------------------------------------------------
+
 ifeq ($(NODEP),1)
-$(DATA_ASM_BUILDDIR)/%.o: $(DATA_ASM_SUBDIR)/%.s
-	$(PREPROC) $< charmap.txt | $(CPP) -I include | $(PREPROC) -ie $$< charmap.txt | $(ASM_PSEUDO_OP_CONV) | $(AS) $(ASFLAGS) -o $@
+$(DATA_ASM_BUILDDIR)/%.o: $(DATA_ASM_SUBDIR)/%.s $(PREPROC_ASM_STAMP)
+	$(PREPROC) $< charmap.txt | $(DATA_CPP) -I include | $(PREPROC) -ie $< charmap.txt | $(ASM_PSEUDO_OP_CONV) | $(AS_IN_BUILDDIR) -o $(CURDIR)/$@ -)
 	$(FIX_UNDERSCORE) $@
 else
 define DATA_ASM_DEP
-$1: $2 $$(shell $(SCANINC) -I include -I "" $2)
-	$$(PREPROC) $$< charmap.txt | $$(CPP) -I include | $$(PREPROC) -ie $$< charmap.txt | $$(ASM_PSEUDO_OP_CONV) | $$(AS) $$(ASFLAGS) -o $$@
+$1: $2 $$(shell $(SCANINC) -I include -I "" $2) $(PREPROC_ASM_STAMP)
+	$$(PREPROC) $$< charmap.txt | $$(DATA_CPP) -I include | $$(PREPROC) -ie $$< charmap.txt | $$(ASM_PSEUDO_OP_CONV) | $$(AS_IN_BUILDDIR) -o $$(CURDIR)/$$@ -)
 	$$(FIX_UNDERSCORE) $$@
 endef
 $(foreach src, $(REGULAR_DATA_ASM_SRCS), $(eval $(call DATA_ASM_DEP,$(patsubst $(DATA_ASM_SUBDIR)/%.s,$(DATA_ASM_BUILDDIR)/%.o, $(src)),$(src))))
 $(foreach src, $(C_ASM_SRCS), $(eval $(call DATA_ASM_DEP,$(patsubst $(C_SUBDIR)/%.s,$(C_BUILDDIR)/%.o, $(src)),$(src))))
 endif
 
-$(SONG_BUILDDIR)/%.o: $(SONG_SUBDIR)/%.s
-	$(ASM_PSEUDO_OP_CONV) $< | $(AS) $(ASFLAGS) -I sound -o $@
+# ---- Song / MIDI assembly rules ---------------------------------------------
+# Static pattern rules override the implicit rules from audio_rules.mk.
+
+$(SONG_OBJS): $(SONG_BUILDDIR)/%.o: $(SONG_SUBDIR)/%.s $(PREPROC_ASM_STAMP)
+	$(ASM_PSEUDO_OP_CONV) $(CURDIR)/$< | $(AS_IN_BUILDDIR) -I sound -o $(CURDIR)/$@ -)
 	$(FIX_UNDERSCORE) $@
 
-$(MID_BUILDDIR)/%.o: $(MID_SUBDIR)/%.s
-	$(ASM_PSEUDO_OP_CONV) $< | $(AS) $(ASFLAGS) -I sound -o $@
+$(MID_OBJS): $(MID_BUILDDIR)/%.o: $(MID_SUBDIR)/%.s $(PREPROC_ASM_STAMP)
+	$(ASM_PSEUDO_OP_CONV) $(CURDIR)/$< | $(AS_IN_BUILDDIR) -I sound -o $(CURDIR)/$@ -)
 	$(FIX_UNDERSCORE) $@
+
+# ---- Linker script generation (not used by default link rule) ----------------
 
 $(OBJ_DIR)/sym_bss.ld: sym_bss.txt
 	$(RAMSCRGEN) .bss $< ENGLISH > $@
@@ -297,15 +463,13 @@ $(OBJ_DIR)/sym_common.ld: sym_common.txt $(C_OBJS) $(wildcard common_syms/*.txt)
 $(OBJ_DIR)/sym_ewram.ld: sym_ewram.txt
 	$(RAMSCRGEN) ewram_data $< ENGLISH > $@
 
-LD_SCRIPT := ld_script_pc.ld
-LD_SCRIPT_DEPS := 
-
-$(OBJ_DIR)/ld_script.ld: $(LD_SCRIPT) $(LD_SCRIPT_DEPS)
-	cd $(OBJ_DIR) && sed "s#tools/#../../tools/#g" ../../$(LD_SCRIPT) > ld_script.ld
-
-$(ELF): $(OBJ_DIR)/ld_script.ld $(OBJS)
-	cd $(OBJ_DIR) && $(LD) $(LDFLAGS) -T ld_script.ld -o ../../$@ $(OBJS_REL) $(LIB)
-	$(FIX) $@ -t"$(TITLE)" -c$(GAME_CODE) -m$(MAKER_CODE) -r$(REVISION) --silent
+# ---- Final link --------------------------------------------------------------
+# Link with gcc driver (handles CRT, stdlib). No custom linker script needed
+# since this is a regular userspace executable, not a GBA ROM.
 
 $(ROM): $(OBJS)
-	$(CC) $(CFLAGS) -Wl,--demangle $^ -static-libgcc -L$(SDL_DIR)/lib $(PLATFORM_INCLUDES) -lwinmm -lxinput -o $@
+ifeq ($(HOST_OS),windows)
+	$(CC) $(CFLAGS) -Wl,--demangle $^ -static-libgcc -L$(SDL_DIR)/lib $(PLATFORM_LIBS) -o $@
+else
+	$(CC) $(CFLAGS) $^ $(PLATFORM_LIBS) -o $@
+endif

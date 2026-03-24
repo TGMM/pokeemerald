@@ -458,9 +458,10 @@ void MysteryGift_LoadLinkGameData(struct MysteryGiftLinkGameData *data, bool32 i
     for (i = 0; i < EASY_CHAT_BATTLE_WORDS_COUNT; i++)
         data->easyChatProfile[i] = gSaveBlock1Ptr->easyChatProfile[i];
 
+#ifndef PORTABLE
     memcpy(data->romHeaderGameCode, RomHeaderGameCode, GAME_CODE_LENGTH);
     data->romHeaderSoftwareVersion = RomHeaderSoftwareVersion;
-#endif //FREE_MYSTERY_GIFT
+#endif
 }
 
 bool32 MysteryGift_ValidateLinkGameData(const struct MysteryGiftLinkGameData *data, bool32 isWonderNews)
