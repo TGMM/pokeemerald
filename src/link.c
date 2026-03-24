@@ -1785,9 +1785,9 @@ void LinkPlayerFromBlock(u32 who)
 }
 
 // When this function returns TRUE the callbacks are skipped
+#ifndef PORTABLE
 bool8 HandleLinkConnection(void)
 {
-#ifndef PORTABLE
     bool32 main1Failed, main2Failed;
 
     if (gWirelessCommType == 0)
@@ -1809,9 +1809,9 @@ bool8 HandleLinkConnection(void)
                 return TRUE;
         }
     }
-#endif
     return FALSE;
 }
+#endif
 
 void SetWirelessCommType1(void)
 {
