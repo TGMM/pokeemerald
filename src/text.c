@@ -782,7 +782,14 @@ inline static void GLYPH_COPY(u8 *windowTiles, u32 widthOffset, u32 x0, u32 y0, 
     if (width <= 0)
         return;
 
+    // UB fix: shifting a 32-bit value by 32 is undefined in C.
+    // ARM gives deterministic results (0), but x86 masks the shift
+    // count to 5 bits, producing wrong results.
+#ifdef UBFIX
+    u32 widthMask = (width >= 8) ? 0xFFFFFFFF : (1u << (width * 4)) - 1;
+#else
     u32 widthMask = (1 << (width * 4)) - 1;
+#endif
 
     u32 shift0 = (x0 % 8) * 4, shift8 = 32 - shift0;
 
@@ -799,8 +806,15 @@ inline static void GLYPH_COPY(u8 *windowTiles, u32 widthOffset, u32 x0, u32 y0, 
         mask = mask & 0x11111111;
         mask = mask * 0xF;
 
+#ifdef UBFIX
+        u32 pixels0 = pixels << shift0;
+        u32 pixels8 = (shift8 < 32) ? (pixels >> shift8) : 0;
+        u32 mask0 = mask << shift0;
+        u32 mask8 = (shift8 < 32) ? (mask >> shift8) : 0;
+#else
         u32 pixels0 = pixels << shift0, pixels8 = pixels >> shift8;
         u32 mask0 = mask << shift0, mask8 = mask >> shift8;
+#endif
 
         u32 *alignedWindowTiles = (u32 *)((u8 *)alignedWindowTilesX + ((y / 8) * widthOffset) + ((y % 8) * 4));
 
