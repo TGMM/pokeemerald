@@ -3309,6 +3309,7 @@ void InitUnionRoom(void)
 
 static void Task_InitUnionRoom(u8 taskId)
 {
+#ifndef PORTABLE
     s32 i;
     u8 text[32];
     struct WirelessLink_URoom *data = sWirelessLinkMain.uRoom;
@@ -3374,6 +3375,7 @@ static void Task_InitUnionRoom(u8 taskId)
         DestroyTask(taskId);
         break;
     }
+#endif
 }
 
 bool16 BufferUnionRoomPlayerName(void)

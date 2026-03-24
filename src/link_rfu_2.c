@@ -328,6 +328,7 @@ void InitRFU(void)
 
 void InitRFUAPI(void)
 {
+#ifndef PORTABLE
     if (!rfu_initializeAPI((void *)gRfuAPIBuffer, sizeof(gRfuAPIBuffer), &gIntrTable[1], TRUE))
     {
         gLinkType = 0;
@@ -336,6 +337,7 @@ void InitRFUAPI(void)
         ResetLinkRfuGFLayer();
         rfu_setTimerInterrupt(3, &gIntrTable[2]);
     }
+#endif
 }
 
 static void Task_ParentSearchForChildren(u8 taskId)
