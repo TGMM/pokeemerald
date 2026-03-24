@@ -5659,6 +5659,15 @@ static void FreeResetData_ReturnToOvOrDoEvolutions(void)
 {
     if (!gPaletteFade.active)
     {
+#ifdef PORTABLE
+        FreeAllWindowBuffers(); // Moved up to avoid use-after-free
+        if (!(gBattleTypeFlags & BATTLE_TYPE_LINK))
+        {
+            FreeMonSpritesGfx();
+            FreeBattleResources();
+            FreeBattleSpritesData();
+        }
+#endif
         gIsFishingEncounter = FALSE;
         gIsSurfingEncounter = FALSE;
         if (gDexNavSpecies && (gBattleOutcome == B_OUTCOME_WON || gBattleOutcome == B_OUTCOME_CAUGHT))
@@ -5692,6 +5701,7 @@ static void FreeResetData_ReturnToOvOrDoEvolutions(void)
         }
     }
 
+#ifndef PORTABLE
     FreeAllWindowBuffers();
     if (!(gBattleTypeFlags & BATTLE_TYPE_LINK))
     {
@@ -5706,6 +5716,7 @@ static void FreeResetData_ReturnToOvOrDoEvolutions(void)
         FreeBattleResources();
         FreeBattleSpritesData();
     }
+#endif
 }
 
 static void TryEvolvePokemon(void)
