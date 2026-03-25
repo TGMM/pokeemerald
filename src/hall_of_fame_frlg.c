@@ -34,7 +34,9 @@
 #define HALL_OF_FAME_MAX_TEAMS 50
 #define HALL_OF_FAME_BG_PAL    RGB(22, 24, 29)
 
+#ifndef PORTABLE
 STATIC_ASSERT(sizeof(struct HallofFameTeam) * HALL_OF_FAME_MAX_TEAMS <= SECTOR_DATA_SIZE * NUM_HOF_SECTORS, HallOfFameFreeSpace);
+#endif
 
 struct HofGfx
 {

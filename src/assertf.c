@@ -1,4 +1,8 @@
+#ifdef __MINGW32__
+#define alloca __builtin_alloca
+#else
 #include <alloca.h>
+#endif
 #include <stdarg.h>
 #include "global.h"
 #include "bg.h"
@@ -313,8 +317,13 @@ void AssertfCrashScreen(const void *return1, const char *fmt, ...)
     // Allocate on stack if possible.
     if (!backup)
     {
+#ifndef PORTABLE
         extern char __iwram_end[];
         size_t stack_free = (char *)__builtin_frame_address(0) - __iwram_end;
+#else
+        // On PC, no IWRAM layout; use a generous estimate
+        size_t stack_free = sizeof(*backup) + 256;
+#endif
         if (stack_free > sizeof(*backup) + 128)
         {
             backup = alloca(sizeof(*backup));

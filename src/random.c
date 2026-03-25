@@ -1,7 +1,11 @@
 #include "global.h"
 #include "random.h"
 #if MODERN
+#ifdef __MINGW32__
+#define alloca __builtin_alloca
+#else
 #include <alloca.h>
+#endif
 #endif
 
 // IWRAM common
@@ -166,6 +170,26 @@ void ShuffleN(void *data, size_t n, size_t size)
     LOOP_RANDOM_END;
 }
 
+// On Windows PE/COFF, weak aliases don't work across translation units.
+// Since the PC port doesn't use the test runner, define these as regular functions.
+#ifdef __MINGW32__
+u32 RandomUniformDefault(enum RandomTag tag, u32 lo, u32 hi);
+u32 RandomUniformExceptDefault(enum RandomTag tag, u32 lo, u32 hi, bool32 (*reject)(u32));
+u32 RandomWeightedArrayDefault(enum RandomTag tag, u32 sum, u32 n, const u16 *weights);
+const void *RandomElementArrayDefault(enum RandomTag tag, const void *array, size_t size, size_t count);
+
+u32 RandomUniform(enum RandomTag tag, u32 lo, u32 hi)
+{ return RandomUniformDefault(tag, lo, hi); }
+
+u32 RandomUniformExcept(enum RandomTag tag, u32 lo, u32 hi, bool32 (*reject)(u32))
+{ return RandomUniformExceptDefault(tag, lo, hi, reject); }
+
+u32 RandomWeightedArray(enum RandomTag tag, u32 sum, u32 n, const u16 *weights)
+{ return RandomWeightedArrayDefault(tag, sum, n, weights); }
+
+const void *RandomElementArray(enum RandomTag tag, const void *array, size_t size, size_t count)
+{ return RandomElementArrayDefault(tag, array, size, count); }
+#else
 __attribute__((weak, alias("RandomUniformDefault")))
 u32 RandomUniform(enum RandomTag tag, u32 lo, u32 hi);
 
@@ -177,6 +201,7 @@ u32 RandomWeightedArray(enum RandomTag tag, u32 sum, u32 n, const u16 *weights);
 
 __attribute__((weak, alias("RandomElementArrayDefault")))
 const void *RandomElementArray(enum RandomTag tag, const void *array, size_t size, size_t count);
+#endif
 
 u32 RandomUniformDefault(enum RandomTag tag, u32 lo, u32 hi)
 {

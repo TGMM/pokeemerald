@@ -11,14 +11,18 @@ ifeq ($(CROSS),mingw32)
   # Cross-compiling for Windows from Linux
   PREFIX := i686-w64-mingw32-
   HOST_OS := windows
+  # Build tools run on the host (Linux), so no .exe extension
+  HOST_EXE :=
 else ifeq ($(OS),Windows_NT)
   # Native Windows build (MSYS2/MinGW)
   PREFIX := i686-w64-mingw32-
   HOST_OS := windows
+  HOST_EXE := .exe
 else
   # Native Linux build
   PREFIX :=
   HOST_OS := linux
+  HOST_EXE :=
 endif
 
 OBJCOPY := $(PREFIX)objcopy
@@ -41,11 +45,13 @@ endif
 # ---- ASM directive conversion (GBA → x86/PE) --------------------------------
 # Convert ARM assembly directives to x86 equivalents and strip ARM-style
 # comments (@ to end of line) which are invalid on x86.
-# Three sed expressions:
+# Four sed expressions:
 #   1. Convert .4byte/.2byte/.word to .int/.short/.int (x86 equivalents)
-#   2. Strip inline @ comments (preceded by whitespace)
-#   3. Delete full-line @ comments (line starts with optional whitespace then @)
-ASM_PSEUDO_OP_CONV := sed -e 's/\.4byte/.int/g;s/\.2byte/.short/g;s/\.word\b/.int/g' -e 's/[[:space:]]@.*//' -e '/^[[:space:]]*@/d'
+#   2. Strip ARM section types (%progbits/%note) — x86 as uses @progbits but
+#      our @ stripping would eat it, and the assembler defaults correctly anyway
+#   3. Strip inline @ comments (preceded by whitespace)
+#   4. Delete full-line @ comments (line starts with optional whitespace then @)
+ASM_PSEUDO_OP_CONV := sed -e 's/\.4byte/.int/g;s/\.2byte/.short/g;s/\.word\b/.int/g' -e 's/,[[:space:]]*%progbits//' -e 's/,[[:space:]]*%note//' -e 's/[[:space:]]@.*//' -e '/^[[:space:]]*@/d'
 
 # FIX_UNDERSCORE is required for 32-bit Windows PE/COFF (leading _ convention).
 # On Linux ELF, symbols have no leading underscore, so this must be a no-op.
@@ -65,17 +71,22 @@ ifeq ($(HOST_OS),linux)
   SDL_LDFLAGS := $(shell PKG_CONFIG_PATH=/usr/lib/i386-linux-gnu/pkgconfig pkg-config --libs sdl2 2>/dev/null)
 else
   # Windows: point SDL_DIR at your i686 SDL2 development tree
-  SDL_DIR     ?= /home/pokeemerald/SDL2-2.0.14/i686-w64-mingw32
+  SDL_DIR     ?= $(CURDIR)/../SDL2-mingw32
   SDL_CFLAGS  := -I$(SDL_DIR)/include
   SDL_LDFLAGS := -L$(SDL_DIR)/lib
 endif
 
 # ---- EXE extension -----------------------------------------------------------
+# TARGET_EXE: extension for the output binary (.exe for Windows target)
+# HOST_EXE:   extension for build tools (set above; empty when cross-compiling)
+# EXE:        used in tool path definitions (must match host, not target)
 ifeq ($(HOST_OS),windows)
-  EXE := .exe
+  TARGET_EXE := .exe
 else
-  EXE :=
+  TARGET_EXE :=
 endif
+
+EXE := $(HOST_EXE)
 
 # ---- Basic settings ----------------------------------------------------------
 all: rom
@@ -91,7 +102,7 @@ TEST        := 0
 
 SHELL := /bin/bash -o pipefail
 
-ROM     := pokeemerald$(EXE)
+ROM     := pokeemerald$(TARGET_EXE)
 OBJ_DIR := build/pc
 ELF      = $(ROM:.exe=.elf)
 MAP      = pokeemerald.map
@@ -453,7 +464,7 @@ $(PREPROC_ASM_STAMP): $(PREPROC_ASM_SRC)
 	@find $(PREPROC_ASM_DIRS) \( -name '*.inc' -o -name '*.s' \) -type f | \
 		while read -r f; do \
 			mkdir -p "$(OBJ_DIR)/$$(dirname "$$f")" && \
-			sed -e 's/\.4byte/.int/g;s/\.2byte/.short/g;s/\.word\b/.int/g' -e 's/[[:space:]]@.*//' -e '/^[[:space:]]*@/d' "$$f" > "$(OBJ_DIR)/$$f"; \
+			sed -e 's/\.4byte/.int/g;s/\.2byte/.short/g;s/\.word\b/.int/g' -e 's/,[[:space:]]*%progbits//' -e 's/,[[:space:]]*%note//' -e 's/[[:space:]]@.*//' -e '/^[[:space:]]*@/d' "$$f" > "$(OBJ_DIR)/$$f"; \
 		done
 	@touch $@
 
